@@ -8,6 +8,8 @@ import torch
 import torch.nn.functional as F
 
 from .utils import exact_div
+from transformers import audio_utils as hf_au
+
 
 # hard-coded audio hyperparameters
 SAMPLE_RATE = 16000
@@ -150,8 +152,23 @@ def log_mel_spectrogram(
     stft = torch.stft(audio, N_FFT, HOP_LENGTH, window=window, return_complex=True)
     magnitudes = stft[..., :-1].abs() ** 2
 
-    filters = mel_filters(audio.device, n_mels)
-    mel_spec = filters @ magnitudes
+    # filters = mel_filters(audio.device, n_mels)
+    # mel_spec = filters @ magnitudes
+
+    _mel_filters = hf_au.mel_filter_bank(
+            num_frequency_bins=1 + N_FFT // 2,
+            num_mel_filters=n_mels,
+            min_frequency=0.0,
+            max_frequency=8000.0,
+            sampling_rate=SAMPLE_RATE,
+            norm="slaney",
+            mel_scale="slaney",
+    )
+
+    filters = torch.from_numpy(_mel_filters).type(torch.float32)
+    if device != "cpu":
+        mel_filters = filters.to(device)
+    mel_spec = filters.T @ magnitudes
 
     log_spec = torch.clamp(mel_spec, min=1e-10).log10()
     log_spec = torch.maximum(log_spec, log_spec.max() - 8.0)
